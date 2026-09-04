@@ -1,0 +1,52 @@
+name: Build e publicação da imagem
+
+# Roda a cada push na main. O servidor nunca mais compila nada: ele só baixa
+# a imagem pronta. Runners do GitHub são gratuitos para repositórios públicos.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # permite disparar manualmente pela aba Actions
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write  # necessário para publicar no GHCR
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Autenticar no GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          # Token gerado automaticamente pelo GitHub. Não precisa criar nada.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Definir as tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Construir e publicar
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache entre execuções: builds seguintes ficam bem mais rápidos.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
